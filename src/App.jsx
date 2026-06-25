@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import {
   Layers, MousePointer2, ArrowRight, Maximize, Wand2, Cpu,
   Aperture, Sparkles, ScanLine, MoveHorizontal, MoveVertical,
-  Home, Apple, Heart, Banana
+  Home, Apple, Heart, Banana, TreePine, Sun
 } from 'lucide-react';
 
 // ─── 색상 팔레트: 각 픽셀은 [R, G, B] ───
@@ -24,12 +24,11 @@ function generateHouse(size) {
   const roofL = m;
   const roofR = size - m - 1;
 
-  // 색상
-  const WALL = [220, 180, 120]; // 벽돌색
-  const ROOF = [200,  50,  50]; // 빨간 지붕
-  const DOOR = [120,  70,  30]; // 갈색 문
-  const WIND = [100, 180, 220]; // 파란 창문
-  const DARK = [160,  30,  30]; // 어두운 빨강(명암)
+  const WALL = [220, 180, 120];
+  const ROOF = [200,  50,  50];
+  const DOOR = [120,  70,  30];
+  const WIND = [100, 180, 220];
+  const DARK = [160,  30,  30];
 
   // 1. 지붕 (삼각형)
   for (let r = roofPeak; r < wallTop; r++) {
@@ -60,12 +59,8 @@ function generateHouse(size) {
       if (r >= 0 && r < size && c >= 0 && c < size) img[r][c] = DOOR;
     }
   }
-  // 문 손잡이
-  if (doorC + Math.floor(doorW/2) - 1 < size && wallBot - 1 >= 0) {
-    img[wallBot - Math.floor(doorH/2)][doorC + Math.floor(doorW/2) - 1] = [60, 30, 10];
-  }
 
-  // 4. 창문 좌 (파란색)
+  // 4. 창문 좌
   const winSize = Math.max(2, Math.floor(size * 0.12));
   const winY = wallTop + Math.max(1, Math.floor(size * 0.08));
   const winLX = wallL + Math.max(1, Math.floor((doorC - wallL) / 2)) - Math.floor(winSize/2);
@@ -113,7 +108,6 @@ function generateApple(size) {
       const dy = (i - cy) / ry;
       const d = dx * dx + dy * dy;
       if (d <= 1.0) {
-        // 명암: 오른쪽 위는 밝게, 왼쪽 아래는 어둡게
         const light = (j - cx) * 0.5 + (i - cy) * (-0.5);
         if (light > rx * 0.4) img[i][j] = LIGHT_RED;
         else if (d > 0.75) img[i][j] = DARK_RED;
@@ -121,7 +115,7 @@ function generateApple(size) {
       }
     }
   }
-  // 줄기 (위쪽 중앙)
+  // 줄기
   const stemX = Math.round(cx);
   const stemTop = Math.max(0, Math.round(cy - ry - size * 0.08));
   const stemBot = Math.round(cy - ry + 1);
@@ -129,7 +123,7 @@ function generateApple(size) {
     if (r >= 0 && stemX >= 0 && stemX < size) img[r][stemX] = STEM;
     if (r >= 0 && stemX - 1 >= 0) img[r][stemX - 1] = STEM;
   }
-  // 잎 (줄기 오른쪽)
+  // 잎
   const leafR = Math.round(cy - ry + size * 0.01);
   const leafC = stemX + 1;
   for (let di = 0; di < 2; di++) {
@@ -153,23 +147,137 @@ function generateHeart(size) {
 
   for (let i = 0; i < size; i++) {
     for (let j = 0; j < size; j++) {
-      // 하트 방정식 (정규화된 좌표)
       const x = (j - cx) / scale;
-      const y = (i - cy) / scale;
-      // 하트 곡선: 위쪽이 둥글고 아래가 뾰족
+      // ★ 핵심 수정: 이미지 좌표(y↓)를 수학 좌표(y↑)로 변환
+      const y = (cy - i) / scale;
       const x2 = x * x;
       const y2 = y * y;
       const expr = (x2 + y2 - 1);
       const heartVal = expr * expr * expr - x2 * y2 * y;
       if (heartVal <= 0) {
-        // 명암
-        const light = x * 0.5 - y * 0.5;
+        const light = x * 0.5 + y * 0.5;
         if (light > 0.4) img[i][j] = LIGHT_PINK;
         else if (heartVal < -0.3) img[i][j] = DARK_PINK;
         else img[i][j] = PINK;
       }
     }
   }
+  return img;
+}
+
+// ─── 나무: 수직 줄기(Sobel X) + 둥근 수관(윤곽선) ───
+// 줄기 좌우 경계 → Sobel X가 강 반응
+// 수관 둥근 윤곽 → Edge 필터가 모든 방향 윤곽선 검출
+function generateTree(size) {
+  const img = Array.from({ length: size }, () => Array(size).fill(BG));
+  const cx = (size - 1) / 2;
+
+  const TRUNK = [139, 90, 43];
+  const TRUNK_DARK = [100, 60, 25];
+  const LEAF = [34, 180, 70];
+  const LEAF_DARK = [20, 120, 40];
+  const LEAF_LIGHT = [90, 210, 95];
+
+  // 수관: 위쪽에 둥근 원
+  const crownCy = size * 0.33;
+  const crownR = size * 0.30;
+
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      const dx = j - cx;
+      const dy = i - crownCy;
+      const d = Math.hypot(dx, dy);
+      if (d <= crownR) {
+        const ratio = d / crownR;
+        if (ratio > 0.85) img[i][j] = LEAF_DARK;
+        else if (dx > crownR * 0.3 && dy < -crownR * 0.2) img[i][j] = LEAF_LIGHT;
+        else img[i][j] = LEAF;
+      }
+    }
+  }
+
+  // 줄기: 수직 사각형
+  const trunkTop = Math.round(crownCy + crownR * 0.4);
+  const trunkBot = size - 2;
+  const trunkW = Math.max(2, Math.floor(size * 0.09));
+  const trunkL = Math.round(cx - trunkW / 2);
+  const trunkR = Math.round(cx + trunkW / 2);
+
+  for (let i = trunkTop; i <= trunkBot && i < size; i++) {
+    for (let j = trunkL; j <= trunkR && j < size; j++) {
+      if (j >= 0 && j < size) {
+        img[i][j] = (j === trunkL || j === trunkR) ? TRUNK_DARK : TRUNK;
+      }
+    }
+  }
+
+  // 가지: 줄기에서 좌우로 수평 가지
+  const branchY = trunkTop + Math.max(1, Math.floor(size * 0.05));
+  const branchLen = Math.max(2, Math.floor(size * 0.10));
+  for (let dj = 1; dj <= branchLen; dj++) {
+    const cj1 = trunkL - dj;
+    const cj2 = trunkR + dj;
+    if (branchY >= 0 && branchY < size) {
+      if (cj1 >= 0 && cj1 < size) img[branchY][cj1] = TRUNK_DARK;
+      if (cj2 >= 0 && cj2 < size) img[branchY][cj2] = TRUNK_DARK;
+    }
+  }
+
+  return img;
+}
+
+// ─── 태양: 원형 + 8방향 광선 → 윤곽선이 모든 방향에 균등하게 나타남 ───
+// 윤곽선(Edge) 필터의 교육용 최적 예시: 원 + 삼각형 = 모든 방향의 경계
+function generateSun(size) {
+  const img = Array.from({ length: size }, () => Array(size).fill(BG));
+  const cx = (size - 1) / 2;
+  const cy = (size - 1) / 2;
+
+  const SUN_Y = [255, 215, 0];
+  const SUN_O = [255, 150, 30];
+  const SUN_L = [255, 240, 100];
+  const RAY = [255, 180, 40];
+  const RAY_D = [220, 130, 20];
+
+  const sunR = size * 0.20;
+  const rayInner = sunR + size * 0.03;
+  const rayOuter = sunR + size * 0.17;
+  const numRays = 8;
+
+  // 1. 광선 (삼각형)
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      const dx = j - cx;
+      const dy = i - cy;
+      const dist = Math.hypot(dx, dy);
+      if (dist > rayInner && dist <= rayOuter) {
+        const angle = Math.atan2(dy, dx);
+        const rayAngle = (Math.PI * 2) / numRays;
+        const normalizedAngle = ((angle % rayAngle) + rayAngle) % rayAngle;
+        const angularDist = Math.min(normalizedAngle, rayAngle - normalizedAngle);
+        const angularWidth = rayAngle * 0.30;
+        if (angularDist < angularWidth) {
+          img[i][j] = angularDist < angularWidth * 0.4 ? RAY_D : RAY;
+        }
+      }
+    }
+  }
+
+  // 2. 태양 본체 (원)
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      const dx = j - cx;
+      const dy = i - cy;
+      const d = Math.hypot(dx, dy);
+      if (d <= sunR) {
+        const ratio = d / sunR;
+        if (ratio > 0.85) img[i][j] = SUN_O;
+        else if (dx > 0 && dy < 0) img[i][j] = SUN_L;
+        else img[i][j] = SUN_Y;
+      }
+    }
+  }
+
   return img;
 }
 
@@ -202,7 +310,6 @@ function generateBanana(size) {
     }
   }
 
-  // 위쪽 끝: 줄기(갈색)
   const [sr, sc] = pts[0];
   const sR = Math.round(sr), sC = Math.round(sc);
   for (let di = -1; di <= 1; di++) {
@@ -213,7 +320,6 @@ function generateBanana(size) {
       }
     }
   }
-  // 잎파리(초록) - 줄기 윗부분
   for (let di = -2; di <= 0; di++) {
     for (let dj = 0; dj <= 2; dj++) {
       const ni = sR + di - 1, nj = sC + dj + 1;
@@ -222,7 +328,6 @@ function generateBanana(size) {
       }
     }
   }
-  // 아래쪽 끝: 갈색
   const [er, ec] = pts[pts.length - 1];
   const eR = Math.round(er), eC = Math.round(ec);
   for (let di = -1; di <= 1; di++) {
@@ -238,10 +343,12 @@ function generateBanana(size) {
 
 // ─── 이미지 생성 함수 매핑 ───
 const IMAGES = [
-  { id: 'house',  name: '집',    icon: Home,   fn: generateHouse,  hint: '수직선(벽·문)과 수평선(지붕·창문)이 뚜렷 → Sobel X/Y 대비 최고!' },
-  { id: 'apple',  name: '사과',  icon: Apple,  fn: generateApple,  hint: '둥근 곡선 + 줄기 → 윤곽선과 방향별 필터가 곡면을 따라가는 모습 확인' },
-  { id: 'heart',  name: '하트',  icon: Heart,  fn: generateHeart,  hint: '좌우 대칭 곡선 → Sobel X가 좌·우 경계를 강하게 잡아냄' },
-  { id: 'banana', name: '바나나', icon: Banana, fn: generateBanana, hint: '대각선 곡선 → 모든 방향의 경계가 골고루 나타남' },
+  { id: 'house',  name: '집',    icon: Home,    fn: generateHouse,  hint: '수직선(벽·문)과 수평선(지붕·창문)이 뚜렷 → Sobel X/Y 비교에 최적!' },
+  { id: 'tree',   name: '나무',  icon: TreePine, fn: generateTree,   hint: '수직 줄기 + 둥근 수관 → Sobel X는 줄기 좌우에 강 반응, 윤곽선은 둥근 형태 검출' },
+  { id: 'sun',    name: '태양',  icon: Sun,     fn: generateSun,    hint: '원형 + 8방향 광선 → 윤곽선(Edge)이 모든 방향에 균등하게 나타남. 가장 완벽한 윤곽선 예시!' },
+  { id: 'apple',  name: '사과',  icon: Apple,   fn: generateApple,  hint: '둥근 곡선 + 줄기 → 윤곽선과 방향별 필터가 곡면을 따라가는 모습 확인' },
+  { id: 'heart',  name: '하트',  icon: Heart,   fn: generateHeart,  hint: '좌우 대칭 곡선 → Sobel X가 좌·우 경계를 강하게 잡아냄' },
+  { id: 'banana', name: '바나나', icon: Banana,  fn: generateBanana, hint: '대각선 곡선 → 모든 방향의 경계가 골고루 나타남' },
 ];
 
 // ─── 필터 정의 ───
@@ -254,22 +361,22 @@ const FILTERS = [
   {
     id: 'sharpen', name: '선명하게 (Sharpen)', icon: Sparkles, factor: 1, factorText: '',
     kernel: [[0,-1,0],[-1,5,-1],[0,-1,0]],
-    explanation: '내 색은 5배로 키우고 주변을 뺍니다. 노랑과 배경의 경계가 또렷해집니다.'
+    explanation: '내 색은 5배로 키우고 주변을 뺍니다. 색과 배경의 경계가 또렷해집니다.'
   },
   {
     id: 'edge', name: '윤곽선 (Edge)', icon: ScanLine, factor: 1, factorText: '',
     kernel: [[-1,-1,-1],[-1,8,-1],[-1,-1,-1]],
-    explanation: '색 변화가 없는 곳은 0(검정), 급격히 변하는 외곽선만 살아남습니다. 해상도↑ → 윤곽선이 가늘고 정교해집니다.'
+    explanation: '색 변화가 없는 곳은 0(검정), 급격히 변하는 외곽선만 살아남습니다. 태양 이미지로 확인해보세요!'
   },
   {
     id: 'sobelX', name: '세로선 (Sobel X)', icon: MoveHorizontal, factor: 1, factorText: '',
     kernel: [[-1,0,1],[-2,0,2],[-1,0,1]],
-    explanation: '좌우 색 차이를 계산. 세로 방향 경계(벽의 좌·우, 문 양옆)에서 강하게 반응합니다. 집 이미지로 확인해보세요!'
+    explanation: '좌우 색 차이를 계산. 세로 방향 경계(벽 좌·우, 나무 줄기 양옆)에서 강하게 반응합니다.'
   },
   {
     id: 'sobelY', name: '가로선 (Sobel Y)', icon: MoveVertical, factor: 1, factorText: '',
     kernel: [[-1,-2,-1],[0,0,0],[1,2,1]],
-    explanation: '위아래 색 차이를 계산. 가로 방향 경계(지붕 선, 창문 위·아래)에서 강하게 반응합니다. 집 이미지로 확인해보세요!'
+    explanation: '위아래 색 차이를 계산. 가로 방향 경계(지붕 선, 창문 위·아래)에서 강하게 반응합니다.'
   }
 ];
 
@@ -393,28 +500,28 @@ export default function App() {
             해상도를 8 → 64로 올려가며 필터가 어떻게 더 정교한 선을 찾아내는지 확인해 보세요.
             R, G, B 각 채널에 같은 커널을 독립적으로 적용한 뒤 합쳐서 새 컬러 픽셀을 만듭니다.
             <br className="hidden sm:block"/>
-            <span className="text-white/70">원본 픽셀을 클릭하면 그 위치의 3×3 내적 계산 과정을 볼 수 있어요. 집 그림으로 Sobel X/Y를 비교해 보세요!</span>
+            <span className="text-white/70">원본 픽셀을 클릭하면 그 위치의 3×3 내적 계산 과정을 볼 수 있어요. 집으로 Sobel X/Y를, 태양으로 윤곽선을 비교해 보세요!</span>
           </p>
         </div>
 
         {/* ─── 컨트롤 패널 ─── */}
         <div className="grid lg:grid-cols-3 gap-4">
-          {/* 이미지 선택 (새로 추가) */}
+          {/* 이미지 선택 */}
           <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-sm lg:col-span-3">
             <h3 className="font-bold text-sm mb-2 text-neutral-600 flex items-center gap-1.5">
               <Layers size={16} className="text-amber-500" /> 0. 이미지 선택
             </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
               {IMAGES.map(img => {
                 const Icon = img.icon;
                 return (
                   <button key={img.id} onClick={() => setImageId(img.id)}
-                    className={`flex flex-col items-center gap-1.5 p-3 rounded-lg text-xs font-bold transition-all duration-200 ${
+                    className={`flex flex-col items-center gap-1.5 p-2.5 rounded-lg text-xs font-bold transition-all duration-200 ${
                       imageId === img.id
                         ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md scale-105'
                         : 'bg-neutral-50 text-neutral-600 border border-neutral-200 hover:bg-neutral-100'
                     }`}>
-                    <Icon size={20} />
+                    <Icon size={18} />
                     {img.name}
                   </button>
                 );
