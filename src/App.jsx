@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import {
   Layers, MousePointer2, ArrowRight, Maximize, Wand2, Cpu,
-  Aperture, Sparkles, ScanLine, MoveHorizontal, MoveVertical
+  Aperture, Sparkles, ScanLine, MoveHorizontal, MoveVertical,
+  Home, Apple, Heart, Banana
 } from 'lucide-react';
 
 // ─── 색상 팔레트: 각 픽셀은 [R, G, B] ───
@@ -11,24 +12,182 @@ const BR = [139,  69,  19]; // 갈색 (끝/줄기)
 const GR = [ 34, 197,  94]; // 초록 (잎파리)
 const DY = [202, 138,   4]; // 어두운 노랑 (명암)
 
+// ─── 집: 수직선(벽) + 수평선(지붕, 창문)이 명확 → Sobel X/Y 대비 좋음 ───
+function generateHouse(size) {
+  const img = Array.from({ length: size }, () => Array(size).fill(BG));
+  const m = Math.max(1, Math.floor(size * 0.08));
+  const wallTop = Math.floor(size * 0.45);
+  const wallBot = size - m - 1;
+  const wallL = m + 1;
+  const wallR = size - m - 2;
+  const roofPeak = m;
+  const roofL = m;
+  const roofR = size - m - 1;
+
+  // 색상
+  const WALL = [220, 180, 120]; // 벽돌색
+  const ROOF = [200,  50,  50]; // 빨간 지붕
+  const DOOR = [120,  70,  30]; // 갈색 문
+  const WIND = [100, 180, 220]; // 파란 창문
+  const DARK = [160,  30,  30]; // 어두운 빨강(명암)
+
+  // 1. 지붕 (삼각형)
+  for (let r = roofPeak; r < wallTop; r++) {
+    const t = (r - roofPeak) / (wallTop - roofPeak);
+    const halfW = (t * (roofR - roofL)) / 2;
+    const cx = (roofL + roofR) / 2;
+    for (let c = 0; c < size; c++) {
+      if (c >= cx - halfW && c <= cx + halfW) {
+        const edgeDist = Math.min(c - (cx - halfW), (cx + halfW) - c);
+        img[r][c] = edgeDist < 1.5 ? DARK : ROOF;
+      }
+    }
+  }
+
+  // 2. 벽
+  for (let r = wallTop; r <= wallBot; r++) {
+    for (let c = wallL; c <= wallR; c++) {
+      img[r][c] = WALL;
+    }
+  }
+
+  // 3. 문 (벽 중앙 하단)
+  const doorW = Math.max(2, Math.floor(size * 0.14));
+  const doorH = Math.max(3, Math.floor(size * 0.28));
+  const doorC = Math.floor((wallL + wallR) / 2);
+  for (let r = wallBot - doorH + 1; r <= wallBot; r++) {
+    for (let c = doorC - Math.floor(doorW/2); c <= doorC + Math.floor(doorW/2); c++) {
+      if (r >= 0 && r < size && c >= 0 && c < size) img[r][c] = DOOR;
+    }
+  }
+  // 문 손잡이
+  if (doorC + Math.floor(doorW/2) - 1 < size && wallBot - 1 >= 0) {
+    img[wallBot - Math.floor(doorH/2)][doorC + Math.floor(doorW/2) - 1] = [60, 30, 10];
+  }
+
+  // 4. 창문 좌 (파란색)
+  const winSize = Math.max(2, Math.floor(size * 0.12));
+  const winY = wallTop + Math.max(1, Math.floor(size * 0.08));
+  const winLX = wallL + Math.max(1, Math.floor((doorC - wallL) / 2)) - Math.floor(winSize/2);
+  for (let r = winY; r < winY + winSize && r < size; r++) {
+    for (let c = winLX; c < winLX + winSize && c < size; c++) {
+      if (r >= 0 && c >= 0) img[r][c] = WIND;
+    }
+  }
+  // 창문 우
+  const winRX = doorC + Math.max(1, Math.floor((wallR - doorC) / 2)) - Math.floor(winSize/2);
+  for (let r = winY; r < winY + winSize && r < size; r++) {
+    for (let c = winRX; c < winRX + winSize && c < size; c++) {
+      if (r >= 0 && c >= 0) img[r][c] = WIND;
+    }
+  }
+
+  // 5. 굴뚝
+  const chimX = Math.floor((roofL + roofR) / 2) + Math.floor((roofR - roofL) / 4);
+  const chimW = Math.max(1, Math.floor(size * 0.06));
+  for (let r = roofPeak + 1; r < wallTop; r++) {
+    for (let c = chimX; c < chimX + chimW && c < size; c++) {
+      if (r >= 0 && c >= 0) img[r][c] = BR;
+    }
+  }
+
+  return img;
+}
+
+// ─── 사과: 둥근 형태 + 줄기 + 잎 → 곡선 + 수직/수평 대비 ───
+function generateApple(size) {
+  const img = Array.from({ length: size }, () => Array(size).fill(BG));
+  const cx = size / 2 - 0.5;
+  const cy = size / 2 + size * 0.05;
+  const rx = size * 0.32;
+  const ry = size * 0.34;
+  const RED = [230, 50, 50];
+  const DARK_RED = [180, 30, 30];
+  const LIGHT_RED = [255, 100, 80];
+  const STEM = [100, 60, 20];
+  const LEAF = [40, 180, 70];
+
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      const dx = (j - cx) / rx;
+      const dy = (i - cy) / ry;
+      const d = dx * dx + dy * dy;
+      if (d <= 1.0) {
+        // 명암: 오른쪽 위는 밝게, 왼쪽 아래는 어둡게
+        const light = (j - cx) * 0.5 + (i - cy) * (-0.5);
+        if (light > rx * 0.4) img[i][j] = LIGHT_RED;
+        else if (d > 0.75) img[i][j] = DARK_RED;
+        else img[i][j] = RED;
+      }
+    }
+  }
+  // 줄기 (위쪽 중앙)
+  const stemX = Math.round(cx);
+  const stemTop = Math.max(0, Math.round(cy - ry - size * 0.08));
+  const stemBot = Math.round(cy - ry + 1);
+  for (let r = stemTop; r <= stemBot && r < size; r++) {
+    if (r >= 0 && stemX >= 0 && stemX < size) img[r][stemX] = STEM;
+    if (r >= 0 && stemX - 1 >= 0) img[r][stemX - 1] = STEM;
+  }
+  // 잎 (줄기 오른쪽)
+  const leafR = Math.round(cy - ry + size * 0.01);
+  const leafC = stemX + 1;
+  for (let di = 0; di < 2; di++) {
+    for (let dj = 0; dj < 3; dj++) {
+      const ni = leafR + di, nj = leafC + dj;
+      if (ni >= 0 && ni < size && nj >= 0 && nj < size) img[ni][nj] = LEAF;
+    }
+  }
+  return img;
+}
+
+// ─── 하트: 좌우 대칭 곡선 → Sobel X(좌우 경계) 특히 잘 보임 ───
+function generateHeart(size) {
+  const img = Array.from({ length: size }, () => Array(size).fill(BG));
+  const cx = size / 2 - 0.5;
+  const cy = size / 2 - size * 0.05;
+  const scale = size * 0.30;
+  const PINK = [240, 80, 130];
+  const DARK_PINK = [200, 50, 100];
+  const LIGHT_PINK = [255, 150, 180];
+
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      // 하트 방정식 (정규화된 좌표)
+      const x = (j - cx) / scale;
+      const y = (i - cy) / scale;
+      // 하트 곡선: 위쪽이 둥글고 아래가 뾰족
+      const x2 = x * x;
+      const y2 = y * y;
+      const expr = (x2 + y2 - 1);
+      const heartVal = expr * expr * expr - x2 * y2 * y;
+      if (heartVal <= 0) {
+        // 명암
+        const light = x * 0.5 - y * 0.5;
+        if (light > 0.4) img[i][j] = LIGHT_PINK;
+        else if (heartVal < -0.3) img[i][j] = DARK_PINK;
+        else img[i][j] = PINK;
+      }
+    }
+  }
+  return img;
+}
+
 // ─── 바나나를 곡선(distance field)으로 생성 ───
-// 위쪽-오른쪽에서 아래쪽-왼쪽으로 휘어진 바나나. 모든 해상도에서 자연스러움.
 function generateBanana(size) {
   const img = Array.from({ length: size }, () => Array(size).fill(BG));
-  const m = Math.max(1, Math.floor(size * 0.12)); // 여백
+  const m = Math.max(1, Math.floor(size * 0.12));
 
-  // 바나나 중심선(곡선) 위의 점들
   const pts = [];
   const N = Math.max(80, size * 6);
   for (let k = 0; k <= N; k++) {
-    const t = k / N; // 0=위쪽 끝, 1=아래쪽 끝
+    const t = k / N;
     const r = m + t * (size - 2 * m);
     const c = (size - m) - t * (size - 2 * m) + Math.sin(t * Math.PI) * size * 0.20;
     pts.push([r, c]);
   }
 
   const thick = Math.max(1.2, size * 0.11);
-
   for (let i = 0; i < size; i++) {
     for (let j = 0; j < size; j++) {
       let md = Infinity;
@@ -38,7 +197,6 @@ function generateBanana(size) {
       }
       if (md <= thick) {
         const ratio = md / thick;
-        // 외곽은 어두운 노랑, 중심은 밝은 노랑
         img[i][j] = ratio > 0.72 ? DY : YL;
       }
     }
@@ -78,6 +236,14 @@ function generateBanana(size) {
   return img;
 }
 
+// ─── 이미지 생성 함수 매핑 ───
+const IMAGES = [
+  { id: 'house',  name: '집',    icon: Home,   fn: generateHouse,  hint: '수직선(벽·문)과 수평선(지붕·창문)이 뚜렷 → Sobel X/Y 대비 최고!' },
+  { id: 'apple',  name: '사과',  icon: Apple,  fn: generateApple,  hint: '둥근 곡선 + 줄기 → 윤곽선과 방향별 필터가 곡면을 따라가는 모습 확인' },
+  { id: 'heart',  name: '하트',  icon: Heart,  fn: generateHeart,  hint: '좌우 대칭 곡선 → Sobel X가 좌·우 경계를 강하게 잡아냄' },
+  { id: 'banana', name: '바나나', icon: Banana, fn: generateBanana, hint: '대각선 곡선 → 모든 방향의 경계가 골고루 나타남' },
+];
+
 // ─── 필터 정의 ───
 const FILTERS = [
   {
@@ -98,36 +264,37 @@ const FILTERS = [
   {
     id: 'sobelX', name: '세로선 (Sobel X)', icon: MoveHorizontal, factor: 1, factorText: '',
     kernel: [[-1,0,1],[-2,0,2],[-1,0,1]],
-    explanation: '좌우 색 차이를 계산. 바나나의 수직 방향(좌·우) 경계에서 강하게 반응합니다.'
+    explanation: '좌우 색 차이를 계산. 세로 방향 경계(벽의 좌·우, 문 양옆)에서 강하게 반응합니다. 집 이미지로 확인해보세요!'
   },
   {
     id: 'sobelY', name: '가로선 (Sobel Y)', icon: MoveVertical, factor: 1, factorText: '',
     kernel: [[-1,-2,-1],[0,0,0],[1,2,1]],
-    explanation: '위아래 색 차이를 계산. 바나나의 수평 방향(위·아래) 경계에서 강하게 반응합니다.'
+    explanation: '위아래 색 차이를 계산. 가로 방향 경계(지붕 선, 창문 위·아래)에서 강하게 반응합니다. 집 이미지로 확인해보세요!'
   }
 ];
 
 const SIZES = [8, 16, 32, 64];
 
 export default function App() {
+  const [imageId, setImageId] = useState('house');
   const [size, setSize] = useState(32);
-  const [selectedFilterId, setSelectedFilterId] = useState('edge');
-  const [viewMode, setViewMode] = useState('combined'); // combined | r | g | b
+  const [selectedFilterId, setSelectedFilterId] = useState('sobelX');
+  const [viewMode, setViewMode] = useState('combined');
 
-  const currentImage = useMemo(() => generateBanana(size), [size]);
+  const imageDef = IMAGES.find(i => i.id === imageId);
+  const generateFn = imageDef.fn;
+  const currentImage = useMemo(() => generateFn(size), [generateFn, size]);
   const filter = FILTERS.find(f => f.id === selectedFilterId);
   const { kernel, factor, factorText } = filter;
 
   const [activeRow, setActiveRow] = useState(Math.floor(size / 2));
   const [activeCol, setActiveCol] = useState(Math.floor(size / 2));
 
-  // 해상도 변경 시 선택 픽셀을 중앙으로 리셋
   useMemo(() => {
     setActiveRow(Math.floor(size / 2));
     setActiveCol(Math.floor(size / 2));
-  }, [size]);
+  }, [size, imageId]);
 
-  // ─── 합성곱 출력 이미지 계산 (useMemo로 동기 계산 → 렌더 에러 방지) ───
   const outputImage = useMemo(() => {
     const out = Array.from({ length: size }, () => Array(size).fill([0, 0, 0]));
     const clamp = (v) => Math.min(255, Math.max(0, Math.abs(v * factor)));
@@ -156,7 +323,6 @@ export default function App() {
     return `rgb(${r},${g},${b})`;
   };
 
-  // 선택 픽셀의 3x3 내적 계산 (채널별)
   const calcStep = (ch) => {
     if (activeRow < 1 || activeRow >= size - 1 || activeCol < 1 || activeCol >= size - 1) {
       return { steps: [], sum: 0, finalVal: 0 };
@@ -180,7 +346,6 @@ export default function App() {
   const mathG = calcStep(1);
   const mathB = calcStep(2);
 
-  // 해상도별 픽셀 크기/간격
   const pixelStyle = (size === 8)  ? 'w-7 h-7 sm:w-9 sm:h-9'
                    : (size === 16) ? 'w-4 h-4 sm:w-5 sm:h-5'
                    : (size === 32) ? 'w-2.5 h-2.5 sm:w-3 sm:h-3'
@@ -196,7 +361,6 @@ export default function App() {
         <span className={colorCls}>{label} 채널</span>
         <span className="font-mono text-neutral-400">Σ = {data.sum}{factorText ? ` ${factorText}` : ''}</span>
       </div>
-      {/* 3x3 내적 계산 시각화 */}
       <div className="grid grid-cols-3 gap-[2px] mb-1.5">
         {data.steps.length > 0 && data.steps.map((row, i) =>
           row.map((cell, j) => (
@@ -229,12 +393,38 @@ export default function App() {
             해상도를 8 → 64로 올려가며 필터가 어떻게 더 정교한 선을 찾아내는지 확인해 보세요.
             R, G, B 각 채널에 같은 커널을 독립적으로 적용한 뒤 합쳐서 새 컬러 픽셀을 만듭니다.
             <br className="hidden sm:block"/>
-            <span className="text-white/70">원본 픽셀을 클릭하면 그 위치의 3×3 내적 계산 과정을 볼 수 있어요.</span>
+            <span className="text-white/70">원본 픽셀을 클릭하면 그 위치의 3×3 내적 계산 과정을 볼 수 있어요. 집 그림으로 Sobel X/Y를 비교해 보세요!</span>
           </p>
         </div>
 
         {/* ─── 컨트롤 패널 ─── */}
         <div className="grid lg:grid-cols-3 gap-4">
+          {/* 이미지 선택 (새로 추가) */}
+          <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-sm lg:col-span-3">
+            <h3 className="font-bold text-sm mb-2 text-neutral-600 flex items-center gap-1.5">
+              <Layers size={16} className="text-amber-500" /> 0. 이미지 선택
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {IMAGES.map(img => {
+                const Icon = img.icon;
+                return (
+                  <button key={img.id} onClick={() => setImageId(img.id)}
+                    className={`flex flex-col items-center gap-1.5 p-3 rounded-lg text-xs font-bold transition-all duration-200 ${
+                      imageId === img.id
+                        ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md scale-105'
+                        : 'bg-neutral-50 text-neutral-600 border border-neutral-200 hover:bg-neutral-100'
+                    }`}>
+                    <Icon size={20} />
+                    {img.name}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-neutral-600 mt-2 bg-gradient-to-r from-amber-50 to-orange-50 p-2.5 rounded-lg border border-amber-100 leading-relaxed">
+              💡 {imageDef.hint}
+            </p>
+          </div>
+
           {/* 해상도 */}
           <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-sm">
             <h3 className="font-bold text-sm mb-2 text-neutral-600 flex items-center gap-1.5">
@@ -253,7 +443,7 @@ export default function App() {
               ))}
             </div>
             <p className="text-[11px] text-neutral-500 mt-2 leading-relaxed">
-              해상도가 높아질수록 바나나가 정교해지고, AI가 잡아내는 엣지도 가늘고 선명해집니다.
+              해상도가 높아질수록 이미지가 정교해지고, AI가 잡아내는 엣지도 가늘고 선명해집니다.
             </p>
           </div>
 
@@ -312,7 +502,7 @@ export default function App() {
           {/* 입력 */}
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-neutral-200 shrink-0 overflow-x-auto max-w-full">
             <h3 className="font-bold text-sm mb-3 flex items-center gap-1.5 justify-center text-neutral-700">
-              <MousePointer2 size={14} className="text-indigo-500" /> 원본 ({size}×{size})
+              <MousePointer2 size={14} className="text-indigo-500" /> 원본 — {imageDef.name} ({size}×{size})
             </h3>
             <div className={`grid ${gapClass} bg-neutral-200 p-1.5 rounded-lg mx-auto w-max`}
               style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }}>
@@ -344,7 +534,6 @@ export default function App() {
             <p className="text-[10px] text-center text-neutral-400 mb-3">
               중앙 픽셀 [{activeRow}, {activeCol}] 의 3×3 연산
             </p>
-            {/* 커널 */}
             <div className="flex justify-center mb-3">
               <div className="grid grid-cols-3 gap-1 bg-slate-700 p-1.5 rounded-lg">
                 {kernel.map((row, i) => row.map((val, j) => (
